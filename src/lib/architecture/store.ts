@@ -47,6 +47,7 @@ type WorkspaceStore = {
   pending: ArchitecturePatch | null;
   conversations: Record<string, AgentMessage[]>;
   drafting: boolean;
+  draftingProjectId: string | null;
   draftError: string | null;
   setProject: (project: ArchitectureProject) => void;
   beginDraft: () => void;
@@ -224,42 +225,58 @@ export const useWorkspace = create<WorkspaceStore>((set, get) => {
     pending: null,
     conversations: {},
     drafting: false,
+    draftingProjectId: null,
     draftError: null,
     setProject: (project) => {
-      commit(project, true);
-      set({ drafting: false, draftError: null });
+      const latest = get().projects[project.id] ?? project;
+      commit(latest, true);
     },
-    beginDraft: () => set({ drafting: true, draftError: null }),
+    beginDraft: () =>
+      set({ drafting: true, draftingProjectId: null, draftError: null }),
     applyDraftSnapshot: (project, complete) => {
-      const current = get().project;
+      const state = get();
+      const existing =
+        state.projects[project.id] ??
+        (state.project?.id === project.id ? state.project : undefined);
       const canvas =
-        current?.id === project.id ? current.canvas : project.canvas;
-      if (current?.id === project.id && current.version > 1) {
-        const nodes = { ...current.nodes };
+        existing?.id === project.id ? existing.canvas : project.canvas;
+      let next: ArchitectureProject;
+      if (existing?.id === project.id && existing.version > 1) {
+        const nodes = { ...existing.nodes };
         for (const [id, node] of Object.entries(project.nodes))
           if (!Object.hasOwn(nodes, id)) nodes[id] = node;
         const seen = new Set(
-          current.edges.map(
+          existing.edges.map(
             (edge) => `${edge.source}:${edge.relation}:${edge.target}`,
           ),
         );
-        const edges = [...current.edges];
+        const edges = [...existing.edges];
         for (const edge of project.edges) {
           const key = `${edge.source}:${edge.relation}:${edge.target}`;
           if (seen.has(key)) continue;
           seen.add(key);
           edges.push(edge);
         }
-        commit({
-          ...current,
+        next = {
+          ...existing,
           nodes,
           edges,
-          canvas: current.canvas,
-        });
-      } else commit(canvas ? { ...project, canvas } : project);
-      set({ drafting: !complete, draftError: null });
+          canvas: existing.canvas,
+        };
+      } else next = canvas ? { ...project, canvas } : project;
+      const parsed = parsePersistableProject(next);
+      const opening = state.draftingProjectId == null;
+      const viewing = state.project;
+      const follow = opening || viewing?.id === parsed.id;
+      set({
+        projects: { ...state.projects, [parsed.id]: parsed },
+        project: follow ? parsed : viewing,
+        drafting: !complete,
+        draftingProjectId: complete ? null : parsed.id,
+        draftError: null,
+      });
     },
-    finishDraft: () => set({ drafting: false }),
+    finishDraft: () => set({ drafting: false, draftingProjectId: null }),
     failDraft: (message) => set({ drafting: false, draftError: message }),
     dispatch,
     saveNode: (node) =>

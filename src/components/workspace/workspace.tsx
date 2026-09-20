@@ -270,6 +270,7 @@ function ProjectWorkspace({ project }: { project: ArchitectureProject }) {
   const dispatch = useWorkspace((s) => s.dispatch);
   const pending = useWorkspace((s) => s.pending);
   const drafting = useWorkspace((s) => s.drafting);
+  const draftingProjectId = useWorkspace((s) => s.draftingProjectId);
   const draftError = useWorkspace((s) => s.draftError);
   const apply = useWorkspace((s) => s.apply);
   const reject = useWorkspace((s) => s.reject);
@@ -415,6 +416,24 @@ function ProjectWorkspace({ project }: { project: ArchitectureProject }) {
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [mobileNav]);
+  useEffect(() => {
+    if (!showHistory) return;
+    function closeOnOutside(event: PointerEvent) {
+      const target = event.target;
+      if (target instanceof Element && target.closest("[data-history-chrome]"))
+        return;
+      setShowHistory(false);
+    }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setShowHistory(false);
+    }
+    document.addEventListener("pointerdown", closeOnOutside);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutside);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [showHistory]);
   const nodes = Object.values(project.nodes);
   const listPresentation = useMemo(
     () =>
@@ -559,6 +578,7 @@ function ProjectWorkspace({ project }: { project: ArchitectureProject }) {
           variant="ghost"
           size="icon-sm"
           className="workspace-sidebar-toggle"
+          data-history-chrome
           aria-label={
             sidebarExpanded
               ? "Collapse workspace navigation"
@@ -595,14 +615,58 @@ function ProjectWorkspace({ project }: { project: ArchitectureProject }) {
           >
             <Search />
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowHistory(true)}
-          >
-            <History data-icon="inline-start" />
-            <span className="hide-mobile">History</span>
-          </Button>
+          <div className="workspace-history" data-history-chrome>
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-expanded={showHistory}
+              aria-controls="workspace-history-panel"
+              onClick={() => setShowHistory((open) => !open)}
+            >
+              <History data-icon="inline-start" />
+              <span className="hide-mobile">History</span>
+            </Button>
+            {showHistory && (
+              <div
+                id="workspace-history-panel"
+                className="history-panel"
+                role="dialog"
+                aria-labelledby="workspace-history-title"
+              >
+                <header>
+                  <div>
+                    <h2 id="workspace-history-title">Architecture history</h2>
+                    <p>Changes made to this project.</p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Close history"
+                    onClick={() => setShowHistory(false)}
+                  >
+                    <X />
+                  </Button>
+                </header>
+                <div className="history-list">
+                  {[...project.history].reverse().map((item) => (
+                    <div key={item.version}>
+                      <Badge variant="outline">v{item.version}</Badge>
+                      <div>
+                        <strong>{item.title}</strong>
+                        <span>
+                          {new Date(item.date).toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          })}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
           <Button variant="outline" size="sm" onClick={exportProject}>
             <Download data-icon="inline-start" />
             <span className="hide-mobile">Export</span>
@@ -628,6 +692,21 @@ function ProjectWorkspace({ project }: { project: ArchitectureProject }) {
           aria-modal={mobileNav || undefined}
           aria-label={mobileNav ? "Workspace menu" : undefined}
         >
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="workspace-sidebar-expand"
+            data-history-chrome
+            aria-label={
+              sidebarExpanded
+                ? "Collapse workspace navigation"
+                : "Expand workspace navigation"
+            }
+            aria-expanded={sidebarExpanded}
+            onClick={() => setSidebarExpanded((value) => !value)}
+          >
+            {sidebarExpanded ? <PanelLeftClose /> : <PanelLeftOpen />}
+          </Button>
           <button
             className="workspace-project"
             aria-label="Switch project"
@@ -695,8 +774,12 @@ function ProjectWorkspace({ project }: { project: ArchitectureProject }) {
                       aria-label={entry.title}
                       title={!sidebarExpanded ? entry.title : undefined}
                       className={cn("workspace-nav-item", active && "active")}
+                      data-history-chrome={
+                        entry.action === "history" ? true : undefined
+                      }
                       onClick={() => {
-                        if (entry.action === "history") setShowHistory(true);
+                        if (entry.action === "history")
+                          setShowHistory((open) => !open);
                         else if (entry.action === "search") setShowSearch(true);
                         else if (entry.view) setView(entry.view);
                         setMobileNav(false);
@@ -816,20 +899,23 @@ function ProjectWorkspace({ project }: { project: ArchitectureProject }) {
           </div>
           {canvasProjection ? (
             <div className="workspace-canvas-area">
-              {drafting && (
-                <div className="workspace-drafting" role="status">
-                  <LoaderCircle aria-hidden="true" />
-                  <span>Adding remaining components…</span>
-                </div>
-              )}
-              {draftError && !drafting && (
-                <div
-                  className="workspace-drafting workspace-drafting-error"
-                  role="status"
-                >
-                  {draftError}
-                </div>
-              )}
+              {drafting &&
+                (!draftingProjectId || draftingProjectId === project.id) && (
+                  <div className="workspace-drafting" role="status">
+                    <LoaderCircle aria-hidden="true" />
+                    <span>Adding remaining components…</span>
+                  </div>
+                )}
+              {draftError &&
+                !drafting &&
+                (!draftingProjectId || draftingProjectId === project.id) && (
+                  <div
+                    className="workspace-drafting workspace-drafting-error"
+                    role="status"
+                  >
+                    {draftError}
+                  </div>
+                )}
               {nodes.length ? (
                 view === "architecture" && listView ? (
                   <div className="architecture-overview">
@@ -1249,6 +1335,9 @@ function ProjectWorkspace({ project }: { project: ArchitectureProject }) {
                     <span>
                       {Object.keys(saved.nodes).length} systems · Version{" "}
                       {saved.version}
+                      {drafting && saved.id === draftingProjectId
+                        ? " · Drafting"
+                        : ""}
                     </span>
                   </div>
                   {saved.id === project.id ? (
@@ -1311,31 +1400,6 @@ function ProjectWorkspace({ project }: { project: ArchitectureProject }) {
                 text="Try a component name or a word from a business rule."
               />
             )}
-          </div>
-        </DialogContent>
-      </Dialog>
-      <Dialog open={showHistory} onOpenChange={setShowHistory}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Architecture history</DialogTitle>
-            <DialogDescription>Changes made to this project.</DialogDescription>
-          </DialogHeader>
-          <div className="history-list">
-            {[...project.history].reverse().map((item) => (
-              <div key={item.version}>
-                <Badge variant="outline">v{item.version}</Badge>
-                <div>
-                  <strong>{item.title}</strong>
-                  <span>
-                    {new Date(item.date).toLocaleDateString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                    })}
-                  </span>
-                </div>
-              </div>
-            ))}
           </div>
         </DialogContent>
       </Dialog>

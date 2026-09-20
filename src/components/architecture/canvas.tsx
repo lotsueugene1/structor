@@ -54,6 +54,7 @@ import {
   nodeIdFromShape,
   nodeShapeId,
   noteFromShape,
+  relationVisual,
   syncCanvas,
   type CanvasViewState,
 } from "@/components/architecture/canvas-sync";
@@ -454,7 +455,14 @@ function SelectionToolbar({
       )}
       {edgeId && (
         <>
-          <span className="canvas-selection-title">Relationship</span>
+          <span className="canvas-selection-title">
+            {
+              relationVisual(
+                project.edges.find((edge) => edge.id === edgeId)?.relation ??
+                  "depends_on",
+              ).label
+            }
+          </span>
           <Button
             size="sm"
             variant="ghost"
@@ -637,6 +645,30 @@ function CanvasOverlay(props: CanvasProps & { onArrange: () => void }) {
       <div className="canvas-bottom-left">
         <ToolStrip />
         <ZoomStrip />
+        {model.edges.length > 0 && (
+          <ul
+            className="canvas-relation-legend"
+            aria-label="Relationship meaning"
+          >
+            {[
+              ...new Map(
+                model.edges.map((edge) => {
+                  const visual = relationVisual(edge.relation);
+                  return [visual.label, visual] as const;
+                }),
+              ).values(),
+            ].map((visual) => (
+              <li
+                key={visual.label}
+                data-dash={visual.dash}
+                data-color={visual.color}
+              >
+                <i aria-hidden="true" />
+                {visual.label}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
       {model.notice && (
         <div className="canvas-projection-notice">{model.notice}</div>
@@ -1103,10 +1135,27 @@ export function ArchitectureCanvas(props: CanvasProps) {
       for (const id of editor.getSelectedShapeIds()) skip.add(id);
     syncCanvas(editor, project, view, model, { skipShapeIds: skip });
     editor.updateInstanceState({ isReadonly: false });
-    const signature = `${projection}:${model.nodes.map((node) => node.id).join("|")}`;
+    const ids = model.nodes.map((node) => node.id);
+    const signature = `${projection}:${ids.join("|")}`;
     if (previousSignature.current !== signature) {
+      const previous = previousSignature.current;
       previousSignature.current = signature;
-      requestAnimationFrame(() => fitArchitecture(editor, true));
+      const separator = previous.indexOf(":");
+      const previousProjection =
+        separator >= 0 ? previous.slice(0, separator) : "";
+      const previousIds =
+        separator >= 0
+          ? previous
+              .slice(separator + 1)
+              .split("|")
+              .filter(Boolean)
+          : [];
+      const grewFromExisting =
+        previousIds.length > 0 &&
+        previousIds.every((id) => ids.includes(id)) &&
+        ids.length >= previousIds.length;
+      if (!previous || previousProjection !== projection || !grewFromExisting)
+        requestAnimationFrame(() => fitArchitecture(editor, true));
     }
   }, [editor, model, project, projection, view]);
 

@@ -4,9 +4,7 @@ import {
   renderPlaintextFromRichText,
   toRichText,
   type Editor,
-  type TLArrowBinding,
   type TLArrowShape,
-  type TLBindingCreate,
   type TLNoteShape,
   type TLParentId,
   type TLShape,
@@ -442,8 +440,140 @@ export function relationVisual(
     dash: "solid",
     size: "s",
     arrowheadEnd: "none",
-    label: "depends on",
+    label: "depends",
   };
+}
+
+type NodeBox = { x: number; y: number; w: number; h: number };
+type Side = "left" | "right" | "top" | "bottom";
+
+function nodeBox(
+  nodeId: string,
+  model: CanvasLayoutModel,
+): NodeBox | undefined {
+  const position = model.positions.get(nodeId);
+  const size = model.sizes.get(nodeId);
+  if (!position || !size) return;
+  return { x: position.x, y: position.y, w: size.w, h: size.h };
+}
+
+function boxCenter(box: NodeBox) {
+  return { x: box.x + box.w / 2, y: box.y + box.h / 2 };
+}
+
+function facingSide(from: NodeBox, toward: NodeBox): Side {
+  const a = boxCenter(from);
+  const b = boxCenter(toward);
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? "right" : "left";
+  return dy >= 0 ? "bottom" : "top";
+}
+
+function anchorOnSide(side: Side, index: number, count: number) {
+  const t = count <= 1 ? 0.5 : 0.22 + (0.56 * index) / Math.max(1, count - 1);
+  if (side === "top") return { x: t, y: 0 };
+  if (side === "bottom") return { x: t, y: 1 };
+  if (side === "left") return { x: 0, y: t };
+  return { x: 1, y: t };
+}
+
+function labelSlots(count: number) {
+  if (count <= 1) return [0.5];
+  if (count === 2) return [0.36, 0.64];
+  return Array.from(
+    { length: count },
+    (_, index) => 0.24 + (0.52 * index) / (count - 1),
+  );
+}
+
+function layoutRelationships(
+  model: CanvasLayoutModel,
+  labeled: (edge: ArchitectureProject["edges"][number]) => boolean,
+) {
+  const anchors = new Map<
+    string,
+    { start: { x: number; y: number }; end: { x: number; y: number } }
+  >();
+  const labelPosition = new Map<string, number>();
+  const terminals: Array<{
+    edgeId: string;
+    nodeId: string;
+    terminal: "start" | "end";
+    side: Side;
+    order: number;
+  }> = [];
+
+  for (const edge of model.edges) {
+    const source = nodeBox(edge.source, model);
+    const target = nodeBox(edge.target, model);
+    if (!source || !target) continue;
+    const leave = facingSide(source, target);
+    const enter = facingSide(target, source);
+    terminals.push({
+      edgeId: edge.id,
+      nodeId: edge.source,
+      terminal: "start",
+      side: leave,
+      order:
+        leave === "top" || leave === "bottom"
+          ? boxCenter(target).x
+          : boxCenter(target).y,
+    });
+    terminals.push({
+      edgeId: edge.id,
+      nodeId: edge.target,
+      terminal: "end",
+      side: enter,
+      order:
+        enter === "top" || enter === "bottom"
+          ? boxCenter(source).x
+          : boxCenter(source).y,
+    });
+  }
+
+  const grouped = new Map<string, typeof terminals>();
+  for (const terminal of terminals) {
+    const key = `${terminal.nodeId}:${terminal.side}`;
+    const group = grouped.get(key) ?? [];
+    group.push(terminal);
+    grouped.set(key, group);
+  }
+  for (const group of grouped.values()) {
+    group.sort((a, b) => a.order - b.order || a.edgeId.localeCompare(b.edgeId));
+    group.forEach((terminal, index) => {
+      const point = anchorOnSide(terminal.side, index, group.length);
+      const current = anchors.get(terminal.edgeId) ?? {
+        start: { x: 0.5, y: 0.5 },
+        end: { x: 0.5, y: 0.5 },
+      };
+      if (terminal.terminal === "start") current.start = point;
+      else current.end = point;
+      anchors.set(terminal.edgeId, current);
+    });
+  }
+
+  const visible = model.edges.filter(labeled);
+  const byTarget = new Map<string, typeof visible>();
+  const bySource = new Map<string, typeof visible>();
+  for (const edge of visible) {
+    const targets = byTarget.get(edge.target) ?? [];
+    targets.push(edge);
+    byTarget.set(edge.target, targets);
+    const sources = bySource.get(edge.source) ?? [];
+    sources.push(edge);
+    bySource.set(edge.source, sources);
+  }
+  for (const edge of visible) {
+    const incoming = byTarget.get(edge.target) ?? [edge];
+    const outgoing = bySource.get(edge.source) ?? [edge];
+    const group = incoming.length >= outgoing.length ? incoming : outgoing;
+    const slots = labelSlots(group.length);
+    const index = group.findIndex((item) => item.id === edge.id);
+    labelPosition.set(edge.id, slots[Math.max(0, index)] ?? 0.5);
+  }
+
+  return { anchors, labelPosition };
 }
 
 function emphasisFor(nodeId: string, view: CanvasViewState) {
@@ -617,6 +747,15 @@ export function syncCanvas(
         }
 
         const pairCounts = new Map<string, number>();
+        const routes = layoutRelationships(model, (edge) => {
+          return (
+            !context.dimming ||
+            view.selected === edge.source ||
+            view.selected === edge.target ||
+            view.affected.includes(edge.source) ||
+            view.affected.includes(edge.target)
+          );
+        });
         for (const edge of model.edges) {
           const id = edgeShapeId(edge.id);
           keep.add(id);
@@ -639,22 +778,35 @@ export function syncCanvas(
             pairIndex === 0
               ? 0
               : (pairIndex % 2 === 1 ? 1 : -1) * Math.ceil(pairIndex / 2) * 28;
+          const anchors = routes.anchors.get(edge.id) ?? {
+            start: { x: 0.5, y: 0.5 },
+            end: { x: 0.5, y: 0.5 },
+          };
           const props: Partial<TLArrowShape["props"]> = {
             kind: "elbow",
             color: view.selected && active ? "green" : visual.color,
-            labelColor: "grey",
+            labelColor: view.selected && active ? "black" : "grey",
             dash: visual.dash,
             size: active && context.dimming ? "m" : visual.size,
+            font: "sans",
+            scale: 0.9,
             arrowheadStart: "none",
             arrowheadEnd: visual.arrowheadEnd,
             fill: "none",
             start: { x: 0, y: 0 },
             end: { x: target.x - source.x, y: target.y - source.y },
-            // Relation meaning lives in stroke style and the node workspace;
-            // floating text per edge becomes noise at scale.
-            richText: toRichText(""),
+            richText: toRichText(dimmed ? "" : visual.label),
+            labelPosition: routes.labelPosition.get(edge.id) ?? 0.5,
             bend: pinned ? (route?.bend ?? 0) : flexibleBend,
           };
+          const bindingProps = (terminal: "start" | "end") => ({
+            terminal,
+            normalizedAnchor:
+              terminal === "start" ? anchors.start : anchors.end,
+            isExact: false,
+            isPrecise: true,
+            snap: "none" as const,
+          });
           const current = existing.get(id);
           if (!current) {
             editor.createShapes<TLArrowShape>([
@@ -672,24 +824,17 @@ export function syncCanvas(
                 props,
               },
             ]);
-            const bindings: TLBindingCreate<TLArrowBinding>[] = (
-              ["start", "end"] as const
-            ).map((terminal) => ({
-              id: edgeBindingId(edge.id, terminal),
-              type: "arrow",
-              fromId: id,
-              toId: nodeShapeId(
-                terminal === "start" ? edge.source : edge.target,
-              ),
-              props: {
-                terminal,
-                normalizedAnchor: { x: 0.5, y: 0.5 },
-                isExact: false,
-                isPrecise: false,
-                snap: "none",
-              },
-            }));
-            editor.createBindings(bindings);
+            editor.createBindings(
+              (["start", "end"] as const).map((terminal) => ({
+                id: edgeBindingId(edge.id, terminal),
+                type: "arrow",
+                fromId: id,
+                toId: nodeShapeId(
+                  terminal === "start" ? edge.source : edge.target,
+                ),
+                props: bindingProps(terminal),
+              })),
+            );
           } else {
             editor.updateShapes<TLArrowShape>([
               {
@@ -704,14 +849,28 @@ export function syncCanvas(
                   color: props.color,
                   dash: props.dash,
                   size: props.size,
+                  font: props.font,
+                  scale: props.scale,
                   arrowheadEnd: props.arrowheadEnd,
                   richText: props.richText,
-                  // Flexible routes recompute on every sync; pinned routes keep
-                  // the user's adjustment.
+                  labelColor: props.labelColor,
+                  labelPosition: props.labelPosition,
                   ...(pinned ? {} : { bend: props.bend }),
                 },
               },
             ]);
+            editor.updateBindings(
+              pinned
+                ? []
+                : (["start", "end"] as const).map((terminal) => ({
+                    id: edgeBindingId(edge.id, terminal),
+                    type: "arrow" as const,
+                    props: {
+                      normalizedAnchor: bindingProps(terminal).normalizedAnchor,
+                      isPrecise: true,
+                    },
+                  })),
+            );
           }
         }
 
