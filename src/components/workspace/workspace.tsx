@@ -1212,10 +1212,22 @@ function ProjectWorkspace({
                           onClick={async () => {
                             try {
                               await navigator.clipboard.writeText(
-                                [
-                                  `url: ${window.location.origin}/api/mcp`,
-                                  `headers: Authorization: Bearer ${project.id}:${shareToken}`,
-                                ].join("\n"),
+                                JSON.stringify(
+                                  {
+                                    mcpServers: {
+                                      structor: {
+                                        url: `${window.location.origin}/api/mcp`,
+                                        serverUrl: `${window.location.origin}/api/mcp`,
+                                        transport: "http",
+                                        headers: {
+                                          Authorization: `Bearer ${project.id}:${shareToken}`,
+                                        },
+                                      },
+                                    },
+                                  },
+                                  null,
+                                  2,
+                                ),
                               );
                               toast.success("MCP configuration copied.");
                             } catch {
