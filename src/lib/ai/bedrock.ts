@@ -188,6 +188,11 @@ function withDraftLimits(
   properties.nodes.maxItems = nodes.maxItems;
   properties.edges.minItems = minEdges;
   properties.decisions.minItems = minDecisions;
+  const nodeItems = properties.nodes as {
+    items?: { required?: string[] };
+  };
+  if (nodeItems.items)
+    nodeItems.items.required = ["id", "name", "kind", "summary"];
   return next;
 }
 
@@ -205,7 +210,7 @@ Return only the application root, the people who use it, the primary security/id
 
 8 to 14 components. Product-specific names. Never name a node "API", "Backend", "Frontend", or "Database" unless you qualify it. Fill summary, intent, requirements, and at least one open question on each domain or capability. 4+ relationships. 1 to 3 decisions.
 
-Write name and description first, then complete node objects, application root first.`;
+Write name and description first. The first node MUST be the application root with id "application", kind "application", a product name, and a one-sentence summary — close that object before writing any other node. Then emit actors and top-level domains as complete objects.`;
 
 export const architectureSystemPrompt = `You are a principal engineer drafting intended architecture for Structor.
 
@@ -234,7 +239,8 @@ Do not invent source files or observed implementation. This is intended architec
 
 Streaming order:
 - Write name and description first, then the nodes array, then edges, then decisions.
-- Emit complete node objects one after another. Application root first, then actors and top-level domains, then nested children.
+- The first node must be the application root with id "application". Close that object (id, name, kind, summary) before writing any other node.
+- Then emit complete node objects: actors and top-level domains, then nested children.
 - Early nodes must be valid on their own so they can be shown before later nodes exist.`;
 
 function envValue(name: string) {

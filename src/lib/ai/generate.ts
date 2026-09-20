@@ -7,6 +7,7 @@ import {
 } from "./hydrate";
 import {
   extractCompleteJsonArray,
+  extractJsonArray,
   extractJsonStringField,
 } from "./partial-json";
 
@@ -103,7 +104,7 @@ function partsFromPartial(source: string, fallback: DraftParts): DraftParts {
       extractJsonStringField(source, "description") ?? fallback.description,
     nodes: mergeKeyed(
       fallback.nodes,
-      extractCompleteJsonArray(source, "nodes"),
+      extractJsonArray(source, "nodes"),
       (node) => (typeof node.id === "string" ? node.id : null),
     ),
     edges: mergeKeyed(
@@ -123,6 +124,35 @@ function partsFromPartial(source: string, fallback: DraftParts): DraftParts {
   };
 }
 
+function nameFromDescription(intent: string) {
+  const firstLine =
+    intent
+      .trim()
+      .split(/\n|[.!?]/, 1)[0]
+      ?.trim() || "New architecture";
+  return firstLine.length <= 80
+    ? firstLine
+    : `${firstLine.slice(0, 79).trimEnd()}…`;
+}
+
+function openingDraft(description: string): DraftParts {
+  const name = nameFromDescription(description);
+  return {
+    name,
+    description,
+    nodes: [
+      {
+        id: "application",
+        name,
+        kind: "application",
+        summary:
+          "Drafting the intended architecture from the product description.",
+      },
+    ],
+    edges: [],
+    decisions: [],
+  };
+}
 function tryHydrate(
   value: unknown,
   description: string,
@@ -153,9 +183,16 @@ export async function* streamArchitectureFromDescription(
     );
 
   const session = createHydrationSession();
+  const opening = tryHydrate(openingDraft(trimmed), trimmed, session);
+  if (!opening)
+    throw new ArchitectureGenerateError(
+      "INVALID_ARCHITECTURE",
+      "The generated architecture could not be opened. Try generating again.",
+      422,
+    );
   let parts: DraftParts = {
-    name: "",
-    description: trimmed,
+    name: opening.name,
+    description: opening.description || trimmed,
     nodes: [],
     edges: [],
     decisions: [],
@@ -177,6 +214,9 @@ export async function* streamArchitectureFromDescription(
     } satisfies ArchitectureDraftSnapshot;
   }
 
+  yield snapshot(opening, false);
+  let emittedModel = false;
+
   async function* consume(
     mode: "skeleton" | "expand",
   ): AsyncGenerator<ArchitectureDraftSnapshot> {
@@ -193,12 +233,13 @@ export async function* streamArchitectureFromDescription(
       const count = Object.keys(project.nodes).length;
       const edges = project.edges.length;
       const now = Date.now();
-      const first = lastProject === undefined;
       const grew = count > lastCount || edges > lastEdgeCount;
       const jumped = count >= lastCount + 2 || edges >= lastEdgeCount + 2;
       const timed = now - lastEmit >= SNAPSHOT_MS && grew;
       const firstEdges = lastEdgeCount === 0 && edges > 0;
-      if (first || firstEdges || jumped || timed)
+      const firstModel = !emittedModel && parts.nodes.length > 0;
+      if (firstModel) emittedModel = true;
+      if (firstModel || firstEdges || jumped || timed)
         yield snapshot(project, false);
       else {
         lastProject = project;
@@ -213,7 +254,7 @@ export async function* streamArchitectureFromDescription(
   }
 
   yield* consume("skeleton");
-  if (!lastProject)
+  if (!emittedModel)
     throw new ArchitectureGenerateError(
       "INVALID_ARCHITECTURE",
       "The generated architecture could not be opened. Try generating again.",
@@ -226,6 +267,12 @@ export async function* streamArchitectureFromDescription(
     if (!lastProject) throw error;
   }
 
+  if (!lastProject)
+    throw new ArchitectureGenerateError(
+      "GENERATION_FAILED",
+      "The architecture could not be generated. Try again.",
+      502,
+    );
   yield snapshot(lastProject, true);
 }
 

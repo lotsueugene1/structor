@@ -68,6 +68,59 @@ export function extractCompleteJsonArray(source: string, key: string) {
   return items;
 }
 
+function extractInProgressRecord(source: string, key: string) {
+  let index = findJsonArray(source, key);
+  if (index < 0) return null;
+  while (index < source.length) {
+    index = skipSpace(source, index);
+    if (!source[index] || source[index] === "]") return null;
+    if (source[index] === ",") {
+      index += 1;
+      continue;
+    }
+    if (source[index] !== "{") return null;
+    const parsed = readJsonValue(source, index);
+    if (parsed) {
+      index = parsed.end;
+      continue;
+    }
+    const fragment = source.slice(index);
+    const name = extractJsonStringField(fragment, "name");
+    if (!name) return null;
+    const id = extractJsonStringField(fragment, "id");
+    const kind = extractJsonStringField(fragment, "kind");
+    const summary = extractJsonStringField(fragment, "summary");
+    return {
+      ...(id ? { id } : {}),
+      name,
+      ...(kind ? { kind } : {}),
+      ...(summary ? { summary } : {}),
+    };
+  }
+  return null;
+}
+
+export function extractJsonArray(source: string, key: string) {
+  const items = extractCompleteJsonArray(source, key);
+  const inProgress = extractInProgressRecord(source, key);
+  const name =
+    typeof inProgress?.name === "string" ? inProgress.name.trim() : "";
+  if (!inProgress || !name) return items;
+  const id =
+    typeof inProgress.id === "string" && inProgress.id.trim()
+      ? inProgress.id.trim()
+      : name;
+  const last = asRecord(items[items.length - 1]);
+  if (last && last.id === id) return items;
+  return [...items, { ...inProgress, id, name }];
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
 export function extractJsonStringField(source: string, key: string) {
   const pattern = new RegExp(`"${key}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`);
   const match = pattern.exec(source);

@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 
 import {
   extractCompleteJsonArray,
+  extractJsonArray,
   extractJsonStringField,
 } from "../src/lib/ai/partial-json.ts";
 
 function ids(source) {
-  return extractCompleteJsonArray(source, "nodes").map(
+  return extractJsonArray(source, "nodes").map(
     (node) => /** @type {{ id: string }} */ (node).id,
   );
 }
@@ -20,7 +21,13 @@ const partial = `{
 `;
 
 assert.equal(extractJsonStringField(partial, "name"), "Roommate Match");
-assert.deepEqual(ids(partial), ["app"]);
+assert.deepEqual(
+  extractCompleteJsonArray(partial, "nodes").map(
+    (node) => /** @type {{ id: string }} */ (node).id,
+  ),
+  ["app"],
+);
+assert.deepEqual(ids(partial), ["app", "matching"]);
 assert.deepEqual(extractCompleteJsonArray(partial, "edges"), []);
 
 const closedMatching = `${partial}}`;
@@ -29,4 +36,12 @@ assert.deepEqual(ids(closedMatching), ["app", "matching"]);
 const withAuth = `${closedMatching}, {"id": "auth", "name": "Campus SSO", "kind": "security", "summary": "Identity"}]`;
 assert.deepEqual(ids(withAuth), ["app", "matching", "auth"]);
 
-console.log("PASS extract complete nodes from partial tool JSON");
+const firstNode = `{
+  "name": "Bean Buddy",
+  "nodes": [
+    {"id": "application", "name": "Bean Buddy Loyalty", "kind": "application", "summary": "A dual-interface`;
+assert.deepEqual(ids(firstNode), ["application"]);
+
+console.log(
+  "PASS extract complete and in-progress nodes from partial tool JSON",
+);

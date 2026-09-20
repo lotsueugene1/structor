@@ -115,6 +115,7 @@ export async function POST(request: Request) {
         );
       };
       try {
+        controller.enqueue(encoder.encode(": connected\n\n"));
         for await (const snapshot of streamArchitectureFromDescription(
           parsed.data.description,
           request.signal,
