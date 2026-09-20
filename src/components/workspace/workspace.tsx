@@ -28,6 +28,7 @@ import {
   LayoutGrid,
   List,
   ListChecks,
+  LoaderCircle,
   Menu,
   Network,
   PanelLeftClose,
@@ -268,6 +269,8 @@ function ProjectWorkspace({ project }: { project: ArchitectureProject }) {
   const removeRelationship = useWorkspace((s) => s.removeRelationship);
   const dispatch = useWorkspace((s) => s.dispatch);
   const pending = useWorkspace((s) => s.pending);
+  const drafting = useWorkspace((s) => s.drafting);
+  const draftError = useWorkspace((s) => s.draftError);
   const apply = useWorkspace((s) => s.apply);
   const reject = useWorkspace((s) => s.reject);
   const propose = useWorkspace((s) => s.propose);
@@ -813,6 +816,20 @@ function ProjectWorkspace({ project }: { project: ArchitectureProject }) {
           </div>
           {canvasProjection ? (
             <div className="workspace-canvas-area">
+              {drafting && (
+                <div className="workspace-drafting" role="status">
+                  <LoaderCircle aria-hidden="true" />
+                  <span>Adding remaining components…</span>
+                </div>
+              )}
+              {draftError && !drafting && (
+                <div
+                  className="workspace-drafting workspace-drafting-error"
+                  role="status"
+                >
+                  {draftError}
+                </div>
+              )}
               {nodes.length ? (
                 view === "architecture" && listView ? (
                   <div className="architecture-overview">

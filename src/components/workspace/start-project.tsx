@@ -27,7 +27,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { RepositoryImport } from "@/components/workspace/repository-import";
-import { architectureGenerateResponseSchema } from "@/lib/ai/schema";
+import { startArchitectureDraft } from "@/lib/ai/draft-client";
 import {
   projectSchema,
   type ArchitectureProject,
@@ -47,7 +47,6 @@ export function StartProject() {
         ? "structor"
         : "start";
   const previousMode = useRef(mode);
-  const generateAbort = useRef<AbortController | null>(null);
   const [intent, setIntent] = useState("");
   const [error, setError] = useState("");
   const [imported, setImported] = useState<ArchitectureProject | null>(null);
@@ -62,12 +61,6 @@ export function StartProject() {
     setError("");
     setImported(null);
   }, [mode]);
-
-  useEffect(() => {
-    return () => {
-      generateAbort.current?.abort();
-    };
-  }, []);
 
   function openProject(project: ArchitectureProject) {
     try {
@@ -109,54 +102,23 @@ export function StartProject() {
       setError("Describe what you want to build.");
       return;
     }
-    generateAbort.current?.abort();
-    const controller = new AbortController();
-    generateAbort.current = controller;
     setGenerating(true);
     try {
-      const response = await fetch("/api/architecture/generate", {
-        method: "POST",
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ description }),
-        signal: controller.signal,
-      });
-      let json: unknown;
-      try {
-        json = await response.json();
-      } catch {
-        setError("The architecture could not be generated. Try again.");
-        return;
-      }
-      const parsed = architectureGenerateResponseSchema.safeParse(json);
-      if (!parsed.success) {
-        setError("The architecture response was incomplete. Try again.");
-        return;
-      }
-      if (!parsed.data.ok) {
-        setError(parsed.data.error.message);
-        return;
-      }
-      const project = projectSchema.safeParse(parsed.data.project);
-      if (!project.success) {
-        setError("The generated architecture could not be opened.");
-        return;
-      }
-      openProject(project.data);
+      await startArchitectureDraft(description);
+      router.push("/workspace");
     } catch (generateError) {
       if (
         generateError instanceof DOMException &&
         generateError.name === "AbortError"
       )
         return;
-      setError("The architecture could not be generated. Try again.");
+      setError(
+        generateError instanceof Error
+          ? generateError.message
+          : "The architecture could not be generated. Try again.",
+      );
     } finally {
-      if (generateAbort.current === controller) {
-        generateAbort.current = null;
-        setGenerating(false);
-      }
+      setGenerating(false);
     }
   }
 
@@ -237,8 +199,8 @@ export function StartProject() {
                     <div>
                       <strong>Drafting architecture</strong>
                       <span>
-                        Structor is proposing components, relationships, and
-                        open questions.
+                        The first components will open on the canvas. The rest
+                        keep appearing as they are drafted.
                       </span>
                     </div>
                   </div>

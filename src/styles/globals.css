@@ -1743,6 +1743,37 @@ button:disabled {
   min-height: 0;
   background: var(--canvas);
 }
+.workspace-drafting {
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transform: translateX(-50%);
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--card) 96%, transparent);
+  box-shadow: var(--shadow-border);
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 500;
+  pointer-events: none;
+}
+.workspace-drafting > svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--primary);
+  animation: repository-spin 900ms linear infinite;
+}
+.workspace-drafting-error {
+  max-width: min(420px, calc(100% - 32px));
+  color: var(--destructive, #b42318);
+  pointer-events: auto;
+}
 .canvas-projection-panel {
   position: absolute;
   top: 16px;
@@ -5561,7 +5592,8 @@ button:disabled {
 
 @media (prefers-reduced-motion: reduce) {
   .repository-status-scanning > svg,
-  .start-intent-generating > svg {
+  .start-intent-generating > svg,
+  .workspace-drafting > svg {
     animation: none;
   }
 }

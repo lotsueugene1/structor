@@ -1,6 +1,6 @@
 import {
   BedrockRuntimeClient,
-  ConverseCommand,
+  ConverseStreamCommand,
   type ToolConfiguration,
 } from "@aws-sdk/client-bedrock-runtime";
 
@@ -167,6 +167,46 @@ export const architectureToolConfig = {
   toolChoice: { tool: { name: TOOL_NAME } },
 } satisfies ToolConfiguration;
 
+function withDraftLimits(
+  config: ToolConfiguration,
+  nodes: { minItems: number; maxItems: number },
+  minEdges: number,
+  minDecisions: number,
+  description: string,
+) {
+  const next = structuredClone(config);
+  const spec = next.tools?.[0]?.toolSpec;
+  const schema = spec?.inputSchema;
+  if (!spec || !schema || !("json" in schema) || !schema.json) return next;
+  spec.description = description;
+  const properties = (
+    schema.json as {
+      properties: Record<string, { minItems?: number; maxItems?: number }>;
+    }
+  ).properties;
+  properties.nodes.minItems = nodes.minItems;
+  properties.nodes.maxItems = nodes.maxItems;
+  properties.edges.minItems = minEdges;
+  properties.decisions.minItems = minDecisions;
+  return next;
+}
+
+export const architectureSkeletonToolConfig = withDraftLimits(
+  architectureToolConfig,
+  { minItems: 8, maxItems: 14 },
+  4,
+  1,
+  "Propose the first visible architecture skeleton for Structor: application root, actors, identity, and top-level domains. Nested services come later.",
+);
+
+export const architectureSkeletonPrompt = `You are a principal engineer drafting the first visible skeleton of an intended architecture for Structor.
+
+Return only the application root, the people who use it, the primary security/identity boundary, and 3 to 6 top-level domains or capabilities. Nest only the 2 to 4 children that define the product. A later pass will add remaining services, pages, APIs, data, events, integrations, and infrastructure.
+
+8 to 14 components. Product-specific names. Never name a node "API", "Backend", "Frontend", or "Database" unless you qualify it. Fill summary, intent, requirements, and at least one open question on each domain or capability. 4+ relationships. 1 to 3 decisions.
+
+Write name and description first, then complete node objects, application root first.`;
+
 export const architectureSystemPrompt = `You are a principal engineer drafting intended architecture for Structor.
 
 Structor is an architecture-first workspace. The graph you return becomes the team's source of truth: nested product boundaries, requirements, business rules, security, events, and open questions. A sparse "frontend / API / database" sketch is a failed draft.
@@ -190,7 +230,12 @@ Fill the fields:
 - 16+ relationships: calls, reads_from, writes_to, emits, protects, depends_on. Connect actors to flows, flows to features, features to APIs and data, security to what it protects.
 - 3 to 6 architecture decisions with a reason and a rejected alternative (sync vs async matching, who owns identity, where source of truth lives).
 
-Do not invent source files or observed implementation. This is intended architecture, not a scanned repo.`;
+Do not invent source files or observed implementation. This is intended architecture, not a scanned repo.
+
+Streaming order:
+- Write name and description first, then the nodes array, then edges, then decisions.
+- Emit complete node objects one after another. Application root first, then actors and top-level domains, then nested children.
+- Early nodes must be valid on their own so they can be shown before later nodes exist.`;
 
 function envValue(name: string) {
   const value = process.env[name]?.trim();
@@ -310,36 +355,98 @@ export function extractToolInput(
   }
 }
 
-export async function converseArchitectureDraft(
+export type ArchitectureConverseMode = "skeleton" | "expand" | "full";
+
+function converseUserText(
   description: string,
-  signal?: AbortSignal,
+  mode: ArchitectureConverseMode,
+  skeleton?: unknown,
 ) {
+  if (mode === "skeleton")
+    return `Draft only the first architecture skeleton for this product: the application root, actors, identity/security boundary, and 3 to 6 top-level domains or capabilities. Nest only the children that define the product. 8 to 14 components. Later work will expand the rest.\n\nProduct:\n${description}`;
+  if (mode === "expand")
+    return `Expand this architecture skeleton into a complete intended architecture a senior team would use before building. Keep the same id slugs for every existing node. Add nested features, services, pages, APIs, data, events, integrations, and infrastructure until there are 18 to 32 components. Return the full graph with original nodes first, then new children. Fill requirements, rules, security, events, questions, assumptions, and decisions. Do not return a toy three-tier diagram.\n\nProduct:\n${description}\n\nSkeleton JSON:\n${JSON.stringify(skeleton ?? {})}`;
+  return `Draft a complete intended architecture a senior team would use before building this product. Infer the domains, actors, flows, services, APIs, data, events, security, and production integrations this would need. Use specific names and fill requirements, rules, security, events, questions, assumptions, and decisions. Do not return a toy three-tier diagram.\n\nProduct:\n${description}`;
+}
+
+export async function* streamConverseToolJson(
+  description: string,
+  options: {
+    signal?: AbortSignal;
+    mode?: ArchitectureConverseMode;
+    skeleton?: unknown;
+  } = {},
+) {
+  const mode = options.mode ?? "full";
   const { region, modelId } = bedrockConfig();
   try {
     const response = await bedrockClient(region).send(
-      new ConverseCommand({
+      new ConverseStreamCommand({
         modelId,
-        system: [{ text: architectureSystemPrompt }],
+        system: [
+          {
+            text:
+              mode === "skeleton"
+                ? architectureSkeletonPrompt
+                : architectureSystemPrompt,
+          },
+        ],
         messages: [
           {
             role: "user",
             content: [
               {
-                text: `Draft a complete intended architecture a senior team would use before building this product. Infer the domains, actors, flows, services, APIs, data, events, security, and production integrations this would need. Use specific names and fill requirements, rules, security, events, questions, assumptions, and decisions. Do not return a toy three-tier diagram.\n\nProduct:\n${description}`,
+                text: converseUserText(description, mode, options.skeleton),
               },
             ],
           },
         ],
-        toolConfig: architectureToolConfig,
+        toolConfig:
+          mode === "skeleton"
+            ? architectureSkeletonToolConfig
+            : architectureToolConfig,
         inferenceConfig: {
-          maxTokens: 16384,
+          maxTokens: mode === "skeleton" ? 6144 : 16384,
           temperature: 0.4,
         },
       }),
-      signal ? { abortSignal: signal } : undefined,
+      options.signal ? { abortSignal: options.signal } : undefined,
     );
-    return extractToolInput(response.output?.message?.content);
+    let buffer = "";
+    for await (const event of response.stream ?? []) {
+      const failure =
+        event.internalServerException ??
+        event.throttlingException ??
+        event.modelStreamErrorException ??
+        event.validationException ??
+        event.serviceUnavailableException;
+      if (failure) throw failure;
+      const delta = event.contentBlockDelta?.delta;
+      const piece = delta?.toolUse?.input ?? delta?.text;
+      if (typeof piece !== "string" || !piece) continue;
+      buffer += piece;
+      yield buffer;
+    }
+    if (!buffer)
+      throw new ArchitectureGenerateError(
+        "GENERATION_FAILED",
+        "The model did not return an architecture. Try again.",
+        502,
+      );
   } catch (error) {
     throw mapBedrockError(error);
   }
+}
+
+export async function converseArchitectureDraft(
+  description: string,
+  signal?: AbortSignal,
+) {
+  let last = "";
+  for await (const chunk of streamConverseToolJson(description, {
+    signal,
+    mode: "full",
+  }))
+    last = chunk;
+  return extractToolInput([{ text: last }]);
 }

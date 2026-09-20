@@ -113,10 +113,37 @@ export const architectureGenerateResponseSchema = z.discriminatedUnion("ok", [
   architectureGenerateErrorSchema,
 ]);
 
+export const architectureGenerateSnapshotEventSchema = z
+  .object({
+    type: z.literal("snapshot"),
+    complete: z.boolean(),
+    nodeCount: z.number().int().nonnegative(),
+    project: projectSchema,
+  })
+  .strict();
+
+export const architectureGenerateStreamErrorSchema = z
+  .object({
+    type: z.literal("error"),
+    error: architectureGenerateErrorSchema.shape.error,
+  })
+  .strict();
+
+export const architectureGenerateStreamEventSchema = z.discriminatedUnion(
+  "type",
+  [
+    architectureGenerateSnapshotEventSchema,
+    architectureGenerateStreamErrorSchema,
+  ],
+);
+
 export type ArchitectureDraft = z.infer<typeof architectureDraftSchema>;
 export type ArchitectureGenerateRequest = z.infer<
   typeof architectureGenerateRequestSchema
 >;
 export type ArchitectureGenerateResponse = z.infer<
   typeof architectureGenerateResponseSchema
+>;
+export type ArchitectureGenerateStreamEvent = z.infer<
+  typeof architectureGenerateStreamEventSchema
 >;
