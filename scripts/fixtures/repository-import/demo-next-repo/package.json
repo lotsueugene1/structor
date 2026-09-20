@@ -1,0 +1,12 @@
+{
+  "name": "hackmit-roommate",
+  "private": true,
+  "dependencies": {
+    "@prisma/client": "6.16.2",
+    "next": "15.5.25",
+    "pg": "8.16.3",
+    "prisma": "6.16.2",
+    "react": "19.2.0",
+    "stripe": "18.0.0"
+  }
+}
