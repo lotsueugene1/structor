@@ -162,11 +162,13 @@ export async function* streamArchitectureFromDescription(
   };
   let lastProject: ArchitectureProject | undefined;
   let lastCount = 0;
+  let lastEdgeCount = 0;
   let lastEmit = 0;
 
   function snapshot(project: ArchitectureProject, complete: boolean) {
     lastProject = project;
     lastCount = Object.keys(project.nodes).length;
+    lastEdgeCount = project.edges.length;
     lastEmit = Date.now();
     return {
       project,
@@ -189,14 +191,19 @@ export async function* streamArchitectureFromDescription(
       const project = tryHydrate(parts, trimmed, session);
       if (!project) continue;
       const count = Object.keys(project.nodes).length;
+      const edges = project.edges.length;
       const now = Date.now();
       const first = lastProject === undefined;
-      const jumped = count >= lastCount + 2;
-      const timed = now - lastEmit >= SNAPSHOT_MS && count > lastCount;
-      if (first || jumped || timed) yield snapshot(project, false);
+      const grew = count > lastCount || edges > lastEdgeCount;
+      const jumped = count >= lastCount + 2 || edges >= lastEdgeCount + 2;
+      const timed = now - lastEmit >= SNAPSHOT_MS && grew;
+      const firstEdges = lastEdgeCount === 0 && edges > 0;
+      if (first || firstEdges || jumped || timed)
+        yield snapshot(project, false);
       else {
         lastProject = project;
         lastCount = Math.max(lastCount, count);
+        lastEdgeCount = Math.max(lastEdgeCount, edges);
       }
     }
     const completeParts = partsFromPartial(buffer, parts);

@@ -453,7 +453,10 @@ function emphasisFor(nodeId: string, view: CanvasViewState) {
   return "normal" as const;
 }
 
-function contextIds(project: ArchitectureProject, view: CanvasViewState) {
+function contextIds(
+  view: CanvasViewState,
+  edges: ArchitectureProject["edges"],
+) {
   const impactMode = view.affected.length > 0 || view.impacted.length > 0;
   const ids = new Set(
     impactMode
@@ -463,7 +466,7 @@ function contextIds(project: ArchitectureProject, view: CanvasViewState) {
         : [],
   );
   if (view.selected && !impactMode)
-    for (const edge of project.edges) {
+    for (const edge of edges) {
       if (edge.source === view.selected) ids.add(edge.target);
       if (edge.target === view.selected) ids.add(edge.source);
     }
@@ -482,7 +485,7 @@ export function syncCanvas(
   options: SyncOptions = {},
 ) {
   const pageId = editor.getCurrentPageId();
-  const context = contextIds(project, view);
+  const context = contextIds(view, model.edges);
   const freeform = view.projection === "system";
   const existing = new Map(
     editor.getCurrentPageShapes().map((shape) => [shape.id, shape]),
@@ -767,6 +770,25 @@ export function syncCanvas(
       },
       { history: "ignore", ignoreShapeLock: true },
     );
+  });
+
+  // tldraw reparents bound arrows into frames. Cross-group lines then sit under
+  // the destination group. Keep relationship arrows on the page, above groups.
+  const arrowIds = model.edges
+    .map((edge) => edgeShapeId(edge.id))
+    .filter((id) => editor.getShape(id));
+  if (arrowIds.length === 0) return;
+  queueMicrotask(() => {
+    if (arrowIds.some((id) => !editor.getShape(id))) return;
+    editor.store.mergeRemoteChanges(() => {
+      editor.run(
+        () => {
+          editor.reparentShapes(arrowIds, pageId);
+          editor.bringToFront(arrowIds);
+        },
+        { history: "ignore", ignoreShapeLock: true },
+      );
+    });
   });
 }
 
