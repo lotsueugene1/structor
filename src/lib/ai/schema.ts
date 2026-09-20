@@ -137,6 +137,35 @@ export const architectureGenerateStreamEventSchema = z.discriminatedUnion(
   ],
 );
 
+export const architectureAskMessageSchema = z
+  .object({
+    role: z.enum(["user", "assistant"]),
+    content: z.string().trim().min(1).max(8000),
+  })
+  .strict();
+
+export const architectureAskRequestSchema = z
+  .object({
+    prompt: z.string().trim().min(1).max(4000),
+    messages: z.array(architectureAskMessageSchema).max(16).default([]),
+    context: z.unknown(),
+  })
+  .strict();
+
+export const architectureAskSuccessSchema = z
+  .object({
+    ok: z.literal(true),
+    reply: z.string().trim().min(1).max(8000),
+  })
+  .strict();
+
+export const architectureAskErrorSchema = architectureGenerateErrorSchema;
+
+export const architectureAskResponseSchema = z.discriminatedUnion("ok", [
+  architectureAskSuccessSchema,
+  architectureAskErrorSchema,
+]);
+
 export type ArchitectureDraft = z.infer<typeof architectureDraftSchema>;
 export type ArchitectureGenerateRequest = z.infer<
   typeof architectureGenerateRequestSchema
@@ -146,4 +175,10 @@ export type ArchitectureGenerateResponse = z.infer<
 >;
 export type ArchitectureGenerateStreamEvent = z.infer<
   typeof architectureGenerateStreamEventSchema
+>;
+export type ArchitectureAskRequest = z.infer<
+  typeof architectureAskRequestSchema
+>;
+export type ArchitectureAskResponse = z.infer<
+  typeof architectureAskResponseSchema
 >;

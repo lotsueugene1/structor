@@ -108,6 +108,7 @@ const addableKinds: Array<[NodeKind, string]> = [
 
 export type CanvasProps = {
   project: ArchitectureProject;
+  licenseKey?: string;
   projection: CanvasProjection;
   selected: string | null;
   /** Entity the canvas has entered; null is the project root. */
@@ -1210,7 +1211,7 @@ export function ArchitectureCanvas(props: CanvasProps) {
     >
       <Tldraw
         hideUi
-        licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
+        licenseKey={props.licenseKey}
         shapeUtils={architectureShapeUtils}
         components={canvasComponents}
         user={user}

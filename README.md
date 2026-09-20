@@ -30,17 +30,20 @@ tldraw runs without a key on `localhost` and in non-production builds, but a
 production deployment (HTTPS on a real domain with `NODE_ENV=production`)
 requires a license key or the editor stops rendering after a few seconds.
 
-Set the key at build time:
+Set the key as a server environment variable (no `NEXT_PUBLIC_` prefix):
 
 ```bash
-NEXT_PUBLIC_TLDRAW_LICENSE_KEY=tldraw-...
+TLDRAW_LICENSE_KEY=tldraw-...
 ```
+
+The workspace page reads it on the server and passes it into the canvas.
+tldraw still validates the key in the browser; it is a product license, not
+an API credential, and does not grant access to any data.
 
 - Trial (100 days, no watermark) and commercial licenses are available from
   https://tldraw.dev/pricing. Hobby licenses are free for non-commercial
   projects but must keep the "made with tldraw" watermark visible.
-- The key is public and validated client-side; it does not grant access to
-  any data. Under commercial and hobby licenses tldraw receives no telemetry.
+- Under commercial and hobby licenses tldraw receives no telemetry.
 - tldraw's own user-preference persistence is disabled: Structor supplies an
   in-memory user so nothing is written to `localStorage`.
 

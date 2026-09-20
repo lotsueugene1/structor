@@ -3,7 +3,9 @@
 import { create } from "zustand";
 
 import {
-  runScopedArchitectureAgent,
+  buildAgentContext,
+  interpretLocalArchitectureAction,
+  serializeAgentContext,
   type AgentMessage,
   type AgentScope,
   type CanvasAction,
@@ -28,6 +30,8 @@ import {
   type CanvasPosition,
   type CanvasSize,
 } from "./schema";
+
+import { askArchitecture } from "@/lib/ai/ask-client";
 
 type Relationship = ArchitectureProject["edges"][number];
 type Decision = ArchitectureProject["decisions"][number];
@@ -71,7 +75,7 @@ type WorkspaceStore = {
   setPending: (patch: ArchitecturePatch) => void;
   reject: () => void;
   apply: () => void;
-  sendAgentMessage: (scope: AgentScope, prompt: string) => void;
+  sendAgentMessage: (scope: AgentScope, prompt: string) => Promise<void>;
 };
 
 function scopeKey(scope: AgentScope) {
@@ -372,40 +376,57 @@ export const useWorkspace = create<WorkspaceStore>((set, get) => {
       });
       commit(result.project, true);
     },
-    sendAgentMessage: (scope, prompt) => {
+    sendAgentMessage: async (scope, prompt) => {
       const project = current();
+      const text = prompt.trim();
+      if (!text) return;
       const key = scopeKey(scope);
       const userMessage: AgentMessage = {
         id: crypto.randomUUID(),
         role: "user",
-        content: prompt.trim(),
+        content: text,
         createdAt: new Date().toISOString(),
         scope,
       };
-      const result = runScopedArchitectureAgent(project, scope, prompt);
-      if (result.commands)
-        dispatch(result.commands, {
+      const local = interpretLocalArchitectureAction(project, scope, text);
+      const prior = get().conversations[key] ?? [];
+      set({
+        conversations: {
+          ...get().conversations,
+          [key]: [...prior, userMessage].slice(-100),
+        },
+      });
+      const reply = local
+        ? local.reply
+        : await askArchitecture({
+            prompt: text,
+            messages: prior.slice(-12).map((message) => ({
+              role: message.role,
+              content: message.content,
+            })),
+            context: serializeAgentContext(buildAgentContext(project, scope)),
+          });
+      if (local?.commands)
+        dispatch(local.commands, {
           actor: "ai",
           title: `Structor AI updated ${scope.type === "node" ? (project.nodes[scope.nodeId]?.name ?? "architecture") : "architecture"}`,
-          reason: prompt,
+          reason: text,
         });
-      if (result.patch) set({ pending: result.patch });
-      if (result.canvas) applyCanvasAction(result.canvas);
+      if (local?.patch) set({ pending: local.patch });
+      if (local?.canvas) applyCanvasAction(local.canvas);
       const assistantMessage: AgentMessage = {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: result.reply,
+        content: reply,
         createdAt: new Date().toISOString(),
         scope,
       };
       set({
         conversations: {
           ...get().conversations,
-          [key]: [
-            ...(get().conversations[key] ?? []),
-            userMessage,
-            assistantMessage,
-          ].slice(-100),
+          [key]: [...(get().conversations[key] ?? []), assistantMessage].slice(
+            -100,
+          ),
         },
       });
     },

@@ -765,6 +765,7 @@ function NodeAgentPanel({
   const conversation = storedConversation ?? [];
   const sendAgentMessage = useWorkspace((s) => s.sendAgentMessage);
   const [prompt, setPrompt] = useState("");
+  const [asking, setAsking] = useState(false);
   const context = buildAgentContext(project, { type: "node", nodeId: node.id });
   return (
     <section className="node-agent">
@@ -777,17 +778,28 @@ function NodeAgentPanel({
         {context.neighbors.length} connected systems, and{" "}
         {context.findings.length} review findings are already in context.
       </p>
-      <div className="node-agent-thread" aria-live="polite">
-        {conversation.length ? (
-          conversation.map((message) => (
-            <div
-              key={message.id}
-              className={cn("node-agent-message", `node-agent-${message.role}`)}
-            >
-              <span>{message.role === "user" ? "You" : "Structor"}</span>
-              <p>{message.content}</p>
-            </div>
-          ))
+      <div className="node-agent-thread" aria-live="polite" aria-busy={asking}>
+        {conversation.length || asking ? (
+          <>
+            {conversation.map((message) => (
+              <div
+                key={message.id}
+                className={cn(
+                  "node-agent-message",
+                  `node-agent-${message.role}`,
+                )}
+              >
+                <span>{message.role === "user" ? "You" : "Structor"}</span>
+                <p>{message.content}</p>
+              </div>
+            ))}
+            {asking && conversation.at(-1)?.role !== "assistant" ? (
+              <div className="node-agent-message node-agent-pending">
+                <span>Structor</span>
+                <p>Reading this architecture…</p>
+              </div>
+            ) : null}
+          </>
         ) : (
           <p className="node-agent-empty">
             Ask about this component, or say “add requirement …”, “set purpose
@@ -799,13 +811,17 @@ function NodeAgentPanel({
         className="editable-list-form"
         onSubmit={(event) => {
           event.preventDefault();
-          if (!prompt.trim()) return;
-          try {
-            sendAgentMessage({ type: "node", nodeId: node.id }, prompt);
-            setPrompt("");
-          } catch (error) {
-            toast.error(errorMessage(error));
-          }
+          if (!prompt.trim() || asking) return;
+          const next = prompt;
+          setPrompt("");
+          setAsking(true);
+          void sendAgentMessage({ type: "node", nodeId: node.id }, next)
+            .catch((error: unknown) => {
+              toast.error(errorMessage(error));
+            })
+            .finally(() => {
+              setAsking(false);
+            });
         }}
       >
         <FieldGroup>
@@ -818,13 +834,14 @@ function NodeAgentPanel({
               rows={2}
               maxLength={4000}
               value={prompt}
+              disabled={asking}
               onChange={(event) => setPrompt(event.target.value)}
             />
           </Field>
         </FieldGroup>
-        <Button type="submit" size="sm" disabled={!prompt.trim()}>
+        <Button type="submit" size="sm" disabled={!prompt.trim() || asking}>
           <Sparkles data-icon="inline-start" />
-          Send
+          {asking ? "Asking" : "Send"}
         </Button>
       </form>
     </section>

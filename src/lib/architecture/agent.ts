@@ -105,9 +105,15 @@ export function reviewArchitectureNode(
     }),
   );
   if (
-    ["domain", "feature", "capability", "service", "api", "flow", "data"].includes(
-      node.kind,
-    ) &&
+    [
+      "domain",
+      "feature",
+      "capability",
+      "service",
+      "api",
+      "flow",
+      "data",
+    ].includes(node.kind) &&
     node.security.length === 0
   )
     findings.push({
@@ -208,6 +214,68 @@ export function buildAgentContext(
   };
 }
 
+function compactNode(node: ArchitectureProject["nodes"][string]) {
+  return {
+    id: node.id,
+    name: node.name,
+    kind: node.kind,
+    summary: node.summary,
+    intent: node.intent,
+    requirements: node.requirements,
+    rules: node.rules,
+    constraints: node.constraints,
+    security: node.security,
+    permissions: node.permissions,
+    events: node.events,
+    questions: node.questions,
+    assumptions: node.assumptions,
+  };
+}
+
+export function serializeAgentContext(context: AgentContext) {
+  const names = new Map<string, string>();
+  for (const node of [
+    ...context.nodes,
+    ...context.neighbors,
+    ...context.children,
+  ])
+    names.set(node.id, node.name);
+  return {
+    project: context.project,
+    focus: context.nodes.map(compactNode),
+    connected: context.neighbors.map((node) => ({
+      id: node.id,
+      name: node.name,
+      kind: node.kind,
+      summary: node.summary,
+    })),
+    children: context.children.map((node) => ({
+      id: node.id,
+      name: node.name,
+      kind: node.kind,
+      summary: node.summary,
+    })),
+    parents: context.parents,
+    relationships: context.relationships.map((edge) => ({
+      from: names.get(edge.source) ?? edge.source,
+      to: names.get(edge.target) ?? edge.target,
+      relation: edge.relation,
+    })),
+    findings: context.findings.map((finding) => ({
+      severity: finding.severity,
+      title: finding.title,
+      detail: finding.detail,
+      nodeId: finding.nodeId,
+    })),
+    decisions: context.decisions.map((decision) => ({
+      title: decision.title,
+      reason: decision.reason,
+      alternative: decision.alternative,
+    })),
+    delta: context.delta,
+  };
+}
+
 function addItemCommand(
   nodeId: string,
   field: NodeListField,
@@ -250,16 +318,18 @@ function findNodeByName(project: ArchitectureProject, name: string) {
   );
 }
 
-export function runScopedArchitectureAgent(
-  project: ArchitectureProject,
-  scope: AgentScope,
-  prompt: string,
-): {
+export type LocalArchitectureAction = {
   reply: string;
   commands?: ArchitectureCommand[];
   patch?: ArchitecturePatch;
   canvas?: CanvasAction;
-} {
+};
+
+export function interpretLocalArchitectureAction(
+  project: ArchitectureProject,
+  scope: AgentScope,
+  prompt: string,
+): LocalArchitectureAction | null {
   const text = prompt.trim();
   const node = scope.type === "node" ? project.nodes[scope.nodeId] : undefined;
   if (scope.type === "node" && !node)
@@ -315,7 +385,9 @@ export function runScopedArchitectureAgent(
   if (notIntended && notIntended[1]) {
     const target = findNodeByName(project, notIntended[1]);
     if (!target)
-      return { reply: `I could not find a component named “${notIntended[1]}”.` };
+      return {
+        reply: `I could not find a component named “${notIntended[1]}”.`,
+      };
     if (!target.observed)
       return {
         reply: `${target.name} has no observed implementation, so this removes it outright.`,
@@ -461,8 +533,5 @@ export function runScopedArchitectureAgent(
     }
   }
 
-  const context = buildAgentContext(project, scope);
-  return {
-    reply: `I assembled scoped architecture context for ${context.nodes.map((item) => item.name).join(", ") || project.name}, including ${context.relationships.length} relationships and ${context.findings.length} review findings. A model provider is not configured in this build, so I did not infer or mutate architecture from this request. Supported local actions include “rename this to …”, “set purpose to …”, “add requirement …”, “create feature …”, “move this into Payments”, and “arrange”.`,
-  };
+  return null;
 }

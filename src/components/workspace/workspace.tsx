@@ -242,7 +242,7 @@ const sidebarSections: Array<{ label: string; entries: SidebarEntry[] }> = [
   },
 ];
 
-export function Workspace() {
+export function Workspace({ licenseKey }: { licenseKey?: string } = {}) {
   const router = useRouter();
   const project = useWorkspace((s) => s.project);
   useEffect(() => {
@@ -258,10 +258,22 @@ export function Workspace() {
       </div>
     );
   }
-  return <ProjectWorkspace key={project.id} project={project} />;
+  return (
+    <ProjectWorkspace
+      key={project.id}
+      project={project}
+      licenseKey={licenseKey}
+    />
+  );
 }
 
-function ProjectWorkspace({ project }: { project: ArchitectureProject }) {
+function ProjectWorkspace({
+  project,
+  licenseKey,
+}: {
+  project: ArchitectureProject;
+  licenseKey?: string;
+}) {
   const params = useSearchParams();
   const projects = useWorkspace((s) => s.projects);
   const setProject = useWorkspace((s) => s.setProject);
@@ -1014,6 +1026,7 @@ function ProjectWorkspace({ project }: { project: ArchitectureProject }) {
                 ) : (
                   <ArchitectureCanvas
                     project={project}
+                    licenseKey={licenseKey}
                     projection={canvasProjection}
                     selected={selected}
                     onProjectionChange={(nextProjection) => {

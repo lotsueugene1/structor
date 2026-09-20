@@ -1,6 +1,8 @@
 import {
   BedrockRuntimeClient,
+  ConverseCommand,
   ConverseStreamCommand,
+  type Message,
   type ToolConfiguration,
 } from "@aws-sdk/client-bedrock-runtime";
 
@@ -243,6 +245,14 @@ Streaming order:
 - Then emit complete node objects: actors and top-level domains, then nested children.
 - Early nodes must be valid on their own so they can be shown before later nodes exist.`;
 
+export const architectureAskPrompt = `You are Structor AI, answering from a team's intended architecture in the Structor workspace.
+
+Use only the scoped architecture JSON the user provides. Name the actual components, relationships, findings, and decisions. If the JSON does not contain the answer, say what is missing instead of inventing systems.
+
+Stay inside this product. Do not give generic software-architecture lectures. Prefer short, concrete replies (usually under 160 words). Write plain sentences, not markdown. When listing connections, use the recorded relation names (calls, reads_from, writes_to, emits, protects, depends_on).
+
+This turn is read-only. If the user asks you to change architecture, explain what should change and point them to a precise command such as “rename this to …”, “set purpose to …”, “add requirement …”, or “create feature …”.`;
+
 function envValue(name: string) {
   const value = process.env[name]?.trim();
   return value ? value : undefined;
@@ -316,6 +326,24 @@ export function mapBedrockError(error: unknown): ArchitectureGenerateError {
     "GENERATION_FAILED",
     "The architecture could not be generated. Try again.",
     502,
+  );
+}
+
+export function mapBedrockAskError(error: unknown): ArchitectureGenerateError {
+  const mapped = mapBedrockError(error);
+  const messages: Partial<Record<ArchitectureGenerateError["code"], string>> = {
+    NOT_CONFIGURED: "Structor AI is not configured for this environment.",
+    MODEL_UNAVAILABLE:
+      "The configured Bedrock model is not available to this account.",
+    TIMEOUT: "Structor AI is busy. Try again shortly.",
+    REQUEST_ABORTED: "The question was stopped.",
+    GENERATION_FAILED: "Structor AI could not answer. Try again.",
+    INTERNAL_ERROR: "Structor AI could not answer. Try again.",
+  };
+  return new ArchitectureGenerateError(
+    mapped.code,
+    messages[mapped.code] ?? mapped.message,
+    mapped.status,
   );
 }
 
@@ -455,4 +483,79 @@ export async function converseArchitectureDraft(
   }))
     last = chunk;
   return extractToolInput([{ text: last }]);
+}
+
+function converseAskMessages(
+  history: Array<{ role: "user" | "assistant"; content: string }>,
+  prompt: string,
+  contextJson: string,
+): Message[] {
+  const messages: Message[] = [];
+  for (const item of history) {
+    const content = item.content.trim();
+    if (!content) continue;
+    const last = messages[messages.length - 1];
+    const lastText = last?.content?.[0]?.text;
+    if (last?.role === item.role && typeof lastText === "string") {
+      last.content = [{ text: `${lastText}\n\n${content}` }];
+      continue;
+    }
+    messages.push({
+      role: item.role,
+      content: [{ text: content }],
+    });
+  }
+  while (messages[0]?.role === "assistant") messages.shift();
+  const question = `Scoped architecture context (JSON):\n${contextJson}\n\nQuestion:\n${prompt}`;
+  const last = messages[messages.length - 1];
+  const lastText = last?.content?.[0]?.text;
+  if (last?.role === "user" && typeof lastText === "string") {
+    last.content = [{ text: `${lastText}\n\n${question}` }];
+    return messages;
+  }
+  messages.push({ role: "user", content: [{ text: question }] });
+  return messages;
+}
+
+export async function converseArchitectureAsk(
+  input: {
+    prompt: string;
+    context: unknown;
+    messages?: Array<{ role: "user" | "assistant"; content: string }>;
+  },
+  signal?: AbortSignal,
+) {
+  const { region, modelId } = bedrockConfig();
+  try {
+    const response = await bedrockClient(region).send(
+      new ConverseCommand({
+        modelId,
+        system: [{ text: architectureAskPrompt }],
+        messages: converseAskMessages(
+          input.messages ?? [],
+          input.prompt,
+          JSON.stringify(input.context ?? {}),
+        ),
+        inferenceConfig: {
+          maxTokens: 1200,
+          temperature: 0.3,
+        },
+      }),
+      signal ? { abortSignal: signal } : undefined,
+    );
+    const text = response.output?.message?.content
+      ?.map((block) => block.text)
+      .filter((value): value is string => Boolean(value))
+      .join("\n")
+      .trim();
+    if (!text)
+      throw new ArchitectureGenerateError(
+        "GENERATION_FAILED",
+        "Structor AI could not answer. Try again.",
+        502,
+      );
+    return text.slice(0, 8000);
+  } catch (error) {
+    throw mapBedrockAskError(error);
+  }
 }

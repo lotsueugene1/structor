@@ -2297,6 +2297,9 @@ button:disabled {
 .node-agent-user {
   background: var(--surface-sage);
 }
+.node-agent-pending > p {
+  color: var(--muted-foreground);
+}
 .node-agent-empty {
   margin: 0;
 }
