@@ -25,7 +25,7 @@ export const architectureToolConfig = {
       toolSpec: {
         name: TOOL_NAME,
         description:
-          "Propose a starting software architecture for Structor. Return only the intended system: components, containment, relationships, and the few decisions that shape the product.",
+          "Propose a complete intended software architecture for Structor. Use product-specific names, nested boundaries, and filled requirements, rules, security, events, questions, and decisions — not a toy diagram.",
         inputSchema: {
           json: {
             type: "object",
@@ -42,59 +42,98 @@ export const architectureToolConfig = {
               },
               nodes: {
                 type: "array",
-                minItems: 6,
-                maxItems: 24,
+                minItems: 16,
+                maxItems: 36,
                 items: {
                   type: "object",
                   properties: {
                     id: {
                       type: "string",
                       description:
-                        "Stable slug used by parentId and edges, for example auth.",
+                        "Stable slug used by parentId and edges, for example matching-engine.",
                     },
                     parentId: {
                       type: "string",
-                      description: "Slug of the containing component, if any.",
+                      description:
+                        "Slug of the containing application, domain, or feature.",
                     },
-                    name: { type: "string" },
+                    name: {
+                      type: "string",
+                      description:
+                        "Specific name a teammate would use, never generic labels like API or Database.",
+                    },
                     kind: { type: "string", enum: nodeKindValues },
                     summary: {
                       type: "string",
-                      description: "One sentence a teammate would recognize.",
+                      description:
+                        "One concrete sentence about what this boundary does in this product.",
                     },
                     intent: {
                       type: "string",
-                      description: "Why this component exists in the product.",
+                      description:
+                        "Why this exists, who it serves, and what would break without it.",
                     },
                     requirements: {
                       type: "array",
+                      minItems: 2,
                       items: { type: "string" },
+                      description:
+                        "2 to 5 testable requirements for this boundary.",
                     },
-                    rules: { type: "array", items: { type: "string" } },
+                    rules: {
+                      type: "array",
+                      items: { type: "string" },
+                      description: "Business rules and invariants.",
+                    },
                     constraints: {
                       type: "array",
                       items: { type: "string" },
+                      description: "Hard limits, SLAs, or non-negotiables.",
                     },
-                    security: { type: "array", items: { type: "string" } },
+                    security: {
+                      type: "array",
+                      items: { type: "string" },
+                      description:
+                        "Authn, authz, data protection, and abuse controls.",
+                    },
                     permissions: {
                       type: "array",
                       items: { type: "string" },
+                      description: "Who may read or change this, and when.",
                     },
-                    events: { type: "array", items: { type: "string" } },
+                    events: {
+                      type: "array",
+                      items: { type: "string" },
+                      description:
+                        "Domain events this boundary emits or consumes.",
+                    },
                     questions: {
                       type: "array",
                       items: { type: "string" },
+                      description:
+                        "Open architecture questions that still need a decision.",
                     },
                     assumptions: {
                       type: "array",
                       items: { type: "string" },
+                      description:
+                        "Assumptions this draft is making so they can be challenged.",
                     },
                   },
-                  required: ["id", "name", "kind", "summary", "intent"],
+                  required: [
+                    "id",
+                    "name",
+                    "kind",
+                    "summary",
+                    "intent",
+                    "requirements",
+                    "questions",
+                  ],
                 },
               },
               edges: {
                 type: "array",
+                minItems: 16,
                 items: {
                   type: "object",
                   properties: {
@@ -107,6 +146,7 @@ export const architectureToolConfig = {
               },
               decisions: {
                 type: "array",
+                minItems: 3,
                 items: {
                   type: "object",
                   properties: {
@@ -114,11 +154,11 @@ export const architectureToolConfig = {
                     reason: { type: "string" },
                     alternative: { type: "string" },
                   },
-                  required: ["title", "reason"],
+                  required: ["title", "reason", "alternative"],
                 },
               },
             },
-            required: ["name", "description", "nodes", "edges"],
+            required: ["name", "description", "nodes", "edges", "decisions"],
           },
         },
       },
@@ -127,22 +167,30 @@ export const architectureToolConfig = {
   toolChoice: { tool: { name: TOOL_NAME } },
 } satisfies ToolConfiguration;
 
-export const architectureSystemPrompt = `You draft starting architectures for Structor, an architecture-first workspace.
+export const architectureSystemPrompt = `You are a principal engineer drafting intended architecture for Structor.
 
-Return a coherent intended architecture for a greenfield product, not a blank canvas and not an observed codebase.
+Structor is an architecture-first workspace. The graph you return becomes the team's source of truth: nested product boundaries, requirements, business rules, security, events, and open questions. A sparse "frontend / API / database" sketch is a failed draft.
 
-Rules:
-- 8 to 18 components. Prefer product boundaries over technology layers.
-- One application root. Nest features, capabilities, services, pages, and APIs under the application or a domain.
-- Include the people (actors), the work they do (flows), the records the product stores (data), and the contracts they use (APIs) when those exist in the description.
-- Add integrations, infrastructure, and security boundaries only when the description implies them.
-- Every component needs a recognizable name, a one-sentence summary, and a purpose.
-- Put 1 to 3 requirements on user-facing and service nodes.
-- Put security requirements on APIs, data, and anything that handles identity or money.
-- Open questions are for real undecided choices, not filler.
-- parentId and edge endpoints must use node ids from this same proposal.
-- Do not invent source files, repositories, or implementation evidence.
-- This is intended architecture: it has not been observed in a codebase yet.`;
+Infer a production-ready intended architecture from a short product description. Fill in the system a competent team would actually have to design, even when the user did not list every piece. Stay faithful to the product; do not bolt on unrelated platforms.
+
+Required shape:
+- 18 to 32 components. Two to four levels of containment. One application root, then domains or major capabilities, then the features, services, pages, APIs, and data they own.
+- Use product-specific names. Never name a node "API", "Backend", "Frontend", "Database", "Auth", or "Users" unless you qualify it (for example "Roommate matching API").
+- Always include: the people (actors), the work they do (flows and pages), the records (data), the contracts (APIs), the behavior (features, capabilities, services), and a security boundary for identity and access.
+- Include domain events when work happens asynchronously (matching completed, message sent, payment captured).
+- Include integrations and infrastructure the product would need in production: notifications, object storage, email, queues, search, payments, maps, school SSO, and so on — only ones this product would actually use.
+- Most nodes nest under a parent. Isolated top-level nodes should be rare.
+
+Fill the fields:
+- Every node: specific summary and intent (not restatements of the name).
+- Features, services, APIs, data, and security: 2 to 5 requirements, plus security or permissions where access matters.
+- Services, APIs, and data: at least one business rule or constraint.
+- Every domain, feature, and service: at least one open question that a real team would still debate.
+- Record assumptions so they can be challenged.
+- 16+ relationships: calls, reads_from, writes_to, emits, protects, depends_on. Connect actors to flows, flows to features, features to APIs and data, security to what it protects.
+- 3 to 6 architecture decisions with a reason and a rejected alternative (sync vs async matching, who owns identity, where source of truth lives).
+
+Do not invent source files or observed implementation. This is intended architecture, not a scanned repo.`;
 
 function envValue(name: string) {
   const value = process.env[name]?.trim();
@@ -277,15 +325,15 @@ export async function converseArchitectureDraft(
             role: "user",
             content: [
               {
-                text: `Draft a starting architecture for this product:\n\n${description}`,
+                text: `Draft a complete intended architecture a senior team would use before building this product. Infer the domains, actors, flows, services, APIs, data, events, security, and production integrations this would need. Use specific names and fill requirements, rules, security, events, questions, assumptions, and decisions. Do not return a toy three-tier diagram.\n\nProduct:\n${description}`,
               },
             ],
           },
         ],
         toolConfig: architectureToolConfig,
         inferenceConfig: {
-          maxTokens: 8192,
-          temperature: 0.2,
+          maxTokens: 16384,
+          temperature: 0.4,
         },
       }),
       signal ? { abortSignal: signal } : undefined,

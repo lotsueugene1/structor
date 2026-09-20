@@ -10,7 +10,7 @@ import {
   type ArchitectureProject,
 } from "@/lib/architecture/schema";
 
-const MAX_LIST_ITEMS = 8;
+const MAX_LIST_ITEMS = 12;
 const MAX_ITEM_LENGTH = 2000;
 
 function clip(value: string, max: number, fallback = "") {
@@ -144,7 +144,7 @@ export function hydrateArchitectureDraft(
     });
   }
 
-  const decisions = draft.decisions.slice(0, 8).map((decision) => ({
+  const decisions = draft.decisions.slice(0, 12).map((decision) => ({
     id: randomUUID(),
     title: clip(decision.title, 200, "Decision"),
     reason: clip(

@@ -84,8 +84,8 @@ export const architectureDraftSchema = z
     name: z.string().trim().min(1).max(80),
     description: z.string().trim().max(10000).default(""),
     nodes: z.array(architectureDraftNodeSchema).min(1).max(40),
-    edges: z.array(architectureDraftEdgeSchema).max(80).default([]),
-    decisions: z.array(architectureDraftDecisionSchema).max(8).default([]),
+    edges: z.array(architectureDraftEdgeSchema).max(120).default([]),
+    decisions: z.array(architectureDraftDecisionSchema).max(12).default([]),
   })
   .passthrough();
 
