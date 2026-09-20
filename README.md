@@ -46,9 +46,8 @@ NEXT_PUBLIC_TLDRAW_LICENSE_KEY=tldraw-...
 
 ## Architecture generation
 
-Start → Continue still opens a blank canvas. Generate architecture is optional
-and calls Amazon Bedrock to draft components, relationships, and open questions
-from the project description.
+Start → Generate architecture drafts components from a description. Start
+blank is a separate path and opens an empty canvas.
 
 Server-side environment:
 

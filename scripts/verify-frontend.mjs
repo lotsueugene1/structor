@@ -80,21 +80,16 @@ try {
     })
     .waitFor();
   await page
-    .getByLabel("Project description", { exact: true })
-    .fill("Interface review. Check the architecture authoring interface.");
-  await page
     .getByRole("button", { name: "Generate architecture", exact: true })
     .waitFor();
-  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.getByRole("button", { name: "Start blank", exact: true }).click();
   await page.waitForURL("**/workspace");
   await page
     .getByText("Define your first component", { exact: true })
     .waitFor();
   assert.equal(await page.locator(".arch-node").count(), 0);
   await capture("workspace-empty");
-  check(
-    "Onboarding opens an empty architecture using only user-entered intent",
-  );
+  check("Onboarding can open a blank canvas without generating architecture");
 
   await page
     .getByRole("button", { name: "Create first component", exact: true })
@@ -210,7 +205,7 @@ try {
   await page.waitForURL(
     (url) => url.pathname === "/start" && url.search === "",
   );
-  await page.getByLabel("Project description", { exact: true }).waitFor();
+  await page.getByLabel("Describe what you want to build", { exact: true }).waitFor();
   check("No browser persistence: reloading the workspace returns to start");
 
   await page.goto(baseURL, { waitUntil: "networkidle" });

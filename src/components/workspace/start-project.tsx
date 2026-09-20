@@ -12,6 +12,7 @@ import {
   FolderUp,
   LoaderCircle,
   Sparkles,
+  SquareDashed,
 } from "lucide-react";
 
 import { Brand } from "@/components/brand";
@@ -34,17 +35,6 @@ import {
 import { useWorkspace } from "@/lib/architecture/store";
 
 type StartMode = "start" | "repository" | "structor";
-
-function projectNameFromIntent(intent: string) {
-  const firstLine =
-    intent
-      .trim()
-      .split(/\n|[.!?]/, 1)[0]
-      ?.trim() || "New architecture";
-  return firstLine.length <= 80
-    ? firstLine
-    : `${firstLine.slice(0, 77).trimEnd()}…`;
-}
 
 export function StartProject() {
   const router = useRouter();
@@ -92,11 +82,11 @@ export function StartProject() {
     }
   }
 
-  function createBlankProject(description: string): ArchitectureProject {
+  function createBlankProject(): ArchitectureProject {
     return {
       id: crypto.randomUUID(),
-      name: projectNameFromIntent(description),
-      description,
+      name: "New architecture",
+      description: "",
       version: 1,
       source: "local",
       nodes: {},
@@ -208,34 +198,28 @@ export function StartProject() {
                 aria-busy={generating}
                 onSubmit={(event) => {
                   event.preventDefault();
-                  if (generating) return;
-                  const description = intent.trim();
-                  setError("");
-                  if (!description) {
-                    setError("Describe what you want to build.");
-                    return;
-                  }
-                  openProject(createBlankProject(description));
+                  if (!generating) void generateArchitecture();
                 }}
               >
                 <Field data-invalid={Boolean(error)} data-disabled={generating}>
-                  <FieldLabel className="sr-only" htmlFor="project-intent">
-                    Project description
+                  <FieldLabel htmlFor="project-intent">
+                    Describe what you want to build
                   </FieldLabel>
                   <Textarea
                     id="project-intent"
                     required
                     rows={6}
                     maxLength={10000}
-                    placeholder="Describe what you want to build…"
+                    placeholder="Describe the product, who uses it, and what it needs to do…"
                     aria-invalid={Boolean(error)}
+                    aria-describedby="project-intent-help"
                     disabled={generating}
                     value={intent}
                     onChange={(event) => setIntent(event.target.value)}
                   />
-                  <FieldDescription>
-                    Continue opens a blank canvas. Generate architecture drafts
-                    components from your description.
+                  <FieldDescription id="project-intent-help">
+                    Structor drafts components, relationships, and open
+                    questions from this description.
                   </FieldDescription>
                 </Field>
                 {error && (
@@ -260,49 +244,56 @@ export function StartProject() {
                   </div>
                 )}
                 <div className="start-intent-submit">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="lg"
-                    disabled={generating}
-                    onClick={() => {
-                      void generateArchitecture();
-                    }}
-                  >
+                  <Button type="submit" size="lg" disabled={generating}>
                     <Sparkles data-icon="inline-start" />
                     Generate architecture
-                  </Button>
-                  <Button type="submit" size="lg" disabled={generating}>
-                    Continue
-                    <ArrowRight data-icon="inline-end" />
                   </Button>
                 </div>
               </form>
 
               <div className="start-existing">
-                <p className="start-existing-label">
-                  Start from an existing project
-                </p>
-                <div className="start-existing-primary">
-                  <div>
-                    <strong>Import repository</strong>
-                    <p>
-                      Upload a repository ZIP and Structor will build an
-                      architecture draft.
-                    </p>
+                <p className="start-existing-label">Start another way</p>
+                <div className="start-existing-options">
+                  <div className="start-existing-primary">
+                    <div>
+                      <strong>Blank canvas</strong>
+                      <p>
+                        Open an empty architecture and add components yourself.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={generating}
+                      onClick={() => openProject(createBlankProject())}
+                    >
+                      <SquareDashed data-icon="inline-start" />
+                      Start blank
+                    </Button>
                   </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => changeMode("repository")}
-                  >
-                    <FolderUp data-icon="inline-start" />
-                    Import repository
-                  </Button>
+                  <div className="start-existing-primary">
+                    <div>
+                      <strong>Import repository</strong>
+                      <p>
+                        Upload a repository ZIP and Structor will build an
+                        architecture draft.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={generating}
+                      onClick={() => changeMode("repository")}
+                    >
+                      <FolderUp data-icon="inline-start" />
+                      Import repository
+                    </Button>
+                  </div>
                 </div>
                 <button
                   className="start-structor-link"
                   type="button"
+                  disabled={generating}
                   onClick={() => changeMode("structor")}
                 >
                   <FileJson aria-hidden="true" />

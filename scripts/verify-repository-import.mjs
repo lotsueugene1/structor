@@ -765,7 +765,25 @@ async function verifyBrowser(repositoryZip) {
       .fill("Retry failed deliveries three times before alerting operators.");
     await workspacePanel
       .getByRole("button", { name: "Add business rule", exact: true })
-      .click();
+      .waitFor({ state: "visible" });
+    await workspacePanel
+      .getByRole("button", { name: "Add business rule", exact: true })
+      .evaluate((button) => {
+        if (!(button instanceof HTMLButtonElement)) return false;
+        return new Promise((resolve) => {
+          const deadline = Date.now() + 10_000;
+          const poll = () => {
+            if (!button.disabled) return resolve(true);
+            if (Date.now() > deadline) return resolve(false);
+            setTimeout(poll, 100);
+          };
+          poll();
+        });
+      });
+    await page
+      .getByRole("complementary", { name: "Notification worker workspace" })
+      .getByRole("button", { name: "Add business rule", exact: true })
+      .click({ timeout: 10_000 });
     await workspacePanel
       .getByText(
         "Retry failed deliveries three times before alerting operators.",

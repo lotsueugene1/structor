@@ -212,14 +212,14 @@ try {
     await journey.waitForURL(
       (url) => url.pathname === "/start" && url.search === "",
     );
-    await journey.getByLabel("Project description", { exact: true }).waitFor();
+    await journey.getByLabel("Describe what you want to build", { exact: true }).waitFor();
 
     await journey.goto(baseURL, { waitUntil: "networkidle" });
     await journey.locator('.entry-card[href="/start"]').click();
     await journey.waitForURL(
       (url) => url.pathname === "/start" && url.search === "",
     );
-    await journey.getByLabel("Project description", { exact: true }).waitFor();
+    await journey.getByLabel("Describe what you want to build", { exact: true }).waitFor();
 
     await journey.goto(baseURL, { waitUntil: "networkidle" });
     await journey.locator('.entry-card[href="/start?mode=repository"]').click();
